@@ -48,13 +48,18 @@ Function setJobTitles() As Scripting.Dictionary
     jobTitles.Add "調署辦事科員", 26
     jobTitles.Add "調署辦事課員", 27
     jobTitles.Add "檢察官", 28
+    jobTitles.Add "其它", 29
     Set setJobTitles = jobTitles
     
 End Function
 
 
 Sub PrintFinishTime()
-    ProcessingBox.Value = ProcessingBox.Value & "----------------------------完成時間:" & Now() & "----------------------------" & vbCrLf
+    With ProcessingBox
+        .SetFocus '//required
+        .Value = .Value & "----------------------------完成時間:" & Now() & "----------------------------" & vbCrLf
+        .SelStart = Len(.Value)
+    End With
 End Sub
 
 Function nb_days_month()
@@ -115,10 +120,17 @@ Function ReadOvertime(book As Workbook, isProject As Boolean, project As Object)
     Dim person As New Collection
     
     'Read data from overtime file
-    Dim readyToEnd As Integer
+    Dim readToRecord As Boolean
+    readToRecord = False
     Dim rw As Integer
-    For rw = 1 To sh.UsedRange.Rows.Count
-        If jobTitles.Exists(sh.Cells(rw, 1).Value) Then 'read people data
+    For rw = 1 To sh.UsedRange.Rows.Count 'Read people data
+        
+        If sh.Cells(rw, 1).Value = "職稱" Then
+            readToRecord = True
+            
+        ElseIf sh.Cells(rw, 1).Value = "合計" Then
+            readToRecord = False
+        ElseIf readToRecord And Trim(sh.Cells(rw, 1).Value) <> "" Then
             person.Add sh.Cells(rw, 1).Value
             person.Add sh.Cells(rw, 2).Value
             Dim monthEnd As Integer
@@ -129,17 +141,25 @@ Function ReadOvertime(book As Workbook, isProject As Boolean, project As Object)
             person.Add sh.Cells(rw, monthEnd + 3).Value
             person.Add sh.Cells(rw, monthEnd + 4).Value
             person.Add sh.Cells(rw, monthEnd + 7).Value
-            If people.Exists(sh.Cells(rw, 1).Value) = False Then
-                people.Add sh.Cells(rw, 1).Value, New Collection
+    
+            If jobTitles.Exists(sh.Cells(rw, 1).Value) Then
+                If people.Exists(sh.Cells(rw, 1).Value) = False Then
+                    people.Add sh.Cells(rw, 1).Value, New Collection
+                End If
+                people.Item(sh.Cells(rw, 1).Value).Add person
+            Else
+                If people.Exists("其它") = False Then
+                    people.Add "其它", New Collection
+                End If
+                people.Item("其它").Add person
             End If
-            people.Item(sh.Cells(rw, 1).Value).Add person
             Set person = Nothing
-
+    
             If isProject Then
                 project.Item(sh.Cells(rw, 2).Value) = sh.Cells(rw, monthEnd + 1).Value
             End If
-
         End If
+        
     Next rw
     
     Set ReadOvertime = people
@@ -159,15 +179,16 @@ Function WriteFile(book As Workbook, people As Object, salary As Object, isProje
     Dim i As Integer
     
     'Record row style of total, sign, people
-    sh.Range("A4:AS4").Copy Destination:=sh.Range("A10000:AS10000")
-    sh.Range("A10000:AS10000").ClearContents
+    ' Michael:A10000:AS10000 範圍設太大，會造成sheet 過大
+    sh.Range("A4:AS4").Copy Destination:=sh.Range("A1000:AS1000")
+    sh.Range("A1000:AS1000").ClearContents
     people_h = sh.Rows(4).RowHeight
     For Each rw In sh.Rows
         If sh.Cells(rw.Row, 1).Value = "合計" Then
-            sh.Range("A" & CStr(rw.Row) + ":AS" & CStr(rw.Row)).Copy Destination:=sh.Range("A10001:AS10001")
+            sh.Range("A" & CStr(rw.Row) + ":AS" & CStr(rw.Row)).Copy Destination:=sh.Range("A1001:AS1001")
             total_h = sh.Rows(rw.Row).RowHeight
         ElseIf sh.Cells(rw.Row, 1).Value = "直屬長官" Then
-            sh.Range("A" & CStr(rw.Row) + ":AS" & CStr(rw.Row)).Copy Destination:=sh.Range("A10002:AS10002")
+            sh.Range("A" & CStr(rw.Row) + ":AS" & CStr(rw.Row)).Copy Destination:=sh.Range("A1002:AS1002")
             sign_h = sh.Rows(rw.Row).RowHeight
             Exit For
         End If
@@ -180,10 +201,14 @@ Function WriteFile(book As Workbook, people As Object, salary As Object, isProje
     For Each jt In jobTitles
         If people.Exists(jt) Then
             For Each Item In people.Item(jt)
+                
                 sh.Range("A" & CStr(rw) + ":AS" & CStr(rw)).UnMerge
                 sh.Range("A" & CStr(rw) + ":AS" & CStr(rw)).Clear
-                sh.Range("A10000:AS10000").Copy Destination:=sh.Range("A" & CStr(rw) + ":AS" & CStr(rw))
+                sh.Range("A1000:AS1000").Copy Destination:=sh.Range("A" & CStr(rw) + ":AS" & CStr(rw))
                 sh.Rows(rw).RowHeight = people_h
+                If jt = "其它" Then
+                    sh.Range(sh.Cells(rw, 1), sh.Cells(rw, monthEnd + 7)).Interior.Color = RGB(128, 128, 255)
+                End If
                 sh.Cells(rw, 1).Value = Item(1)
                 sh.Cells(rw, 2).Value = Item(2)
                 sh.Range(sh.Cells(rw, 3), sh.Cells(rw, monthEnd)).Value = Item(3)
@@ -194,7 +219,7 @@ Function WriteFile(book As Workbook, people As Object, salary As Object, isProje
                         wd = Weekday(DateValue(CStr(YearText) + "/" + CStr(MonthText) + "/" + CStr(idx)))
                         If (wd = 1 Or wd = 7) Then 'sunday or saturday
                             If Item(3)(1, idx) > 8 Then
-                                sh.Range(sh.Cells(rw, 1), sh.Cells(rw, monthEnd + 7)).Interior.Color = RGB(255, 126, 0)
+                                sh.Range(sh.Cells(rw, 1), sh.Cells(rw, monthEnd + 7)).Interior.Color = RGB(255, 128, 0)
                                 ProcessingBox.Value = ProcessingBox.Value & vbTab & Item(2) & " " & "假日加班>8小時" & vbCrLf
                                 Exit For
                             End If
@@ -216,7 +241,7 @@ Function WriteFile(book As Workbook, people As Object, salary As Object, isProje
                     projectHour = 0
                 End If
                 If project.Exists(Item(2)) And Item(4) + projectHour > 70 Then 'check whether overtime is over 一般+專案>70
-                    sh.Range(sh.Cells(rw, 1), sh.Cells(rw, monthEnd + 7)).Interior.Color = RGB(255, 126, 255) 'overtime is over, fill with purple
+                    sh.Range(sh.Cells(rw, 1), sh.Cells(rw, monthEnd + 7)).Interior.Color = RGB(255, 128, 255) 'overtime is over, fill with purple
                     ProcessingBox.Value = ProcessingBox.Value & vbTab & Item(2) & " " & "一般+專案>70小時" & vbCrLf
                 End If
                 sh.Cells(rw, monthEnd + 7).Value = Item(8)
@@ -234,23 +259,25 @@ Function WriteFile(book As Workbook, people As Object, salary As Object, isProje
     Next
     sh.Range("A" & CStr(rw) + ":AS" & CStr(rw + 100)).UnMerge
     sh.Range("A" & CStr(rw) + ":AS" & CStr(rw + 100)).Clear
-    sh.Range("A10001:AS10001").Copy Destination:=sh.Range("A" & CStr(rw) + ":AS" & CStr(rw))
+    sh.Range("A1001:AS1001").Copy Destination:=sh.Range("A" & CStr(rw) + ":AS" & CStr(rw))
     sh.Rows(rw).RowHeight = total_h
     sh.Cells(rw, 2).Value = CStr(rw - 4) + "人"
-    sh.Range("A10002:AS10002").Copy Destination:=sh.Range("A" & CStr(rw + 1) + ":AS" & CStr(rw + 1))
+    sh.Range("A1002:AS1002").Copy Destination:=sh.Range("A" & CStr(rw + 1) + ":AS" & CStr(rw + 1))
     sh.Rows(rw + 1).RowHeight = sign_h
     
-    sh.Range("A10000:AS10000").Clear
-    sh.Range("A10000:AS10001").Clear
-    sh.Range("A10000:AS10002").Clear
+    sh.Range("A1000:AS1000").Clear
+    sh.Range("A1000:AS1001").Clear
+    sh.Range("A1000:AS1002").Clear
     
     book.Application.DisplayAlerts = False
+    sh.Range("A1").Select
     book.SaveAs resultFolder + fileName + "(完成).xls", FileFormat:=56, ConflictResolution:=Excel.XlSaveConflictResolution.xlLocalSessionChanges
     
 End Function
 
 
 Private Sub CheckButton_Click()
+    Marquee.Visible = True
     
     'Read file name from TextBox
     Dim FileNames() As String
@@ -261,18 +288,22 @@ Private Sub CheckButton_Click()
     If YearText = "" Or MonthText = "" Then
         MsgBox ("年份月份不完整")
         PrintFinishTime
+        Marquee.Visible = False
         Exit Sub
     ElseIf Dir(SalaryButton.Caption) = "" Then
         MsgBox ("薪資資料不完整")
         PrintFinishTime
+        Marquee.Visible = False
         Exit Sub
     ElseIf Dir(TreatmentButton.Caption) = "" Then
         MsgBox ("待遇清冊不完整")
         PrintFinishTime
+        Marquee.Visible = False
         Exit Sub
     ElseIf UBound(FileNames) = -1 Then
         MsgBox ("加班資料不完整")
         PrintFinishTime
+        Marquee.Visible = False
         Exit Sub
     End If
     
@@ -296,6 +327,9 @@ Private Sub CheckButton_Click()
     
     Dim app As New Excel.Application
     app.Visible = False 'Visible is False by default, so this isn't necessary
+    ' michael added
+    app.ScreenUpdating = False
+    
     Dim book As Excel.Workbook
     Dim OvertimeFileName As String
     Dim i, s As Integer
@@ -333,31 +367,20 @@ Private Sub CheckButton_Click()
     
     app.Quit
     Set app = Nothing
-    PrintFinishTime
-    
+    ProcessingBox.Value = ProcessingBox.Value & "----------------------------全部檢查結束:" & Now() & "----------------------------" & vbCrLf
+    MsgBox ("完成")
+    Marquee.Visible = False
 End Sub
 
-Private Sub ClearButton_Click()
-    OvertimeTextBox = ""
+Private Sub UserForm_Initialize()
+    Dim d As Date
+    d = Date
+    'MsgBox ("現在是：" & d)
+    UserForm1.YearText.Value = Year(d - 28)
+    UserForm1.MonthText.Value = Month(d - 28)
+    Set jobTitles = setJobTitles
 End Sub
 
-Private Sub OvertimeButton_Click()
-    With Application.FileDialog(msoFileDialogFilePicker)
-    .AllowMultiSelect = True
-    .Title = "Select file"
-    .ButtonName = "Confirm"
-    If .Show = -1 Then
-        'ok clicked
-        Dim Item
-        For Each Item In .SelectedItems
-            OvertimeTextBox.Value = OvertimeTextBox & vbCrLf & Item
-        Next
-    Else
-        'cancel clicked
-    End If
-    
-    End With
-End Sub
 
 Private Sub SalaryButton_Click()
     With Application.FileDialog(msoFileDialogFilePicker)
@@ -379,15 +402,6 @@ Private Sub SalaryButton_Click()
     End If
 End Sub
 
-Private Sub UserForm_Initialize()
-    Dim d As Date
-    d = Date
-    'MsgBox ("現在是：" & d)
-    UserForm1.YearText.Value = Year(d - 28)
-    UserForm1.MonthText.Value = Month(d - 28)
-    Set jobTitles = setJobTitles
-End Sub
-
 Private Sub TreatmentButton_Click()
     With Application.FileDialog(msoFileDialogFilePicker)
     .AllowMultiSelect = False
@@ -407,3 +421,28 @@ Private Sub TreatmentButton_Click()
         MsgBox ("檔名未含有「待遇校對」，請確認有無選錯檔案!!")
     End If
 End Sub
+
+Private Sub OvertimeButton_Click()
+    With Application.FileDialog(msoFileDialogFilePicker)
+    .AllowMultiSelect = True
+    .Title = "Select file"
+    .ButtonName = "Confirm"
+    If .Show = -1 Then
+        'ok clicked
+        Dim Item
+        For Each Item In .SelectedItems
+            OvertimeTextBox.Value = OvertimeTextBox & vbCrLf & Item
+        Next
+    Else
+        'cancel clicked
+    End If
+    
+    End With
+End Sub
+
+Private Sub ClearButton_Click()
+    OvertimeTextBox = ""
+End Sub
+
+
+

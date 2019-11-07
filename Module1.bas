@@ -1,11 +1,8 @@
 Attribute VB_Name = "Module1"
 
-Sub OvertimeCheck()
+Sub ShowForm()
 
     UserForm1.Show
-    
-
-    
     
 End Sub
 
